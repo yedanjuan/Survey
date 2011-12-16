@@ -10,6 +10,7 @@ class Survey(db.Model):
     title = db.StringProperty()
     question = db.StringProperty()
     option = db.StringProperty()
+    count = db.IntegerProperty()
 
 class MainPage(webapp.RequestHandler):
     def get(self):
@@ -52,7 +53,7 @@ class TaskChoice(webapp.RequestHandler):
                <input type="submit" name = "button" value="submit" />
               </form>"""%account)
         else: 
-          self.response.out.write('<html><body>You choose to ')
+          self.response.out.write('<html><body>%s, you choose to '%account)
           self.response.out.write(cgi.escape(taskChoice))
           self.response.out.write('.<br /></body></html>')
 
@@ -69,7 +70,54 @@ class TaskChoice(webapp.RequestHandler):
             </body>
           </html>"""%account)
 
-      #  else if taskChoice=="vote":
+        if taskChoice=="edit your survey":
+             surveys = db.GqlQuery("SELECT * "
+                                   "FROM Survey "
+                                   "WHERE account = :1", account
+                                  )
+             if surveys.count()!=0:
+                 self.response.out.write(""" <html><body>""")
+                 self.response.out.write(""" <form action="/editSurvey" method="post">""")
+                 curTitle=""
+                 curQuestion=""
+                 titleNum=0             
+                 for survey in surveys:
+                     if curTitle!=survey.title:
+                         curTitle=survey.title
+                         titleNum=titleNum+1
+                         questionNum=0
+                         self.response.out.write("""<div>
+                         <input type="radio" name = "title", value=%s/>
+                         <font size = 6>%s. %s</font>
+                         </div>"""%(curTitle, titleNum, curTitle))
+                     if curQuestion!=survey.question:
+                         curQuestion=survey.question
+                         questionNum=questionNum+1
+                         optionNum=0
+                         tq= [str(curTitle), str(curQuestion)] 
+                         self.response.out.write("""<div>                          
+                          &nbsp &nbsp <font size = 5><input type="radio" name = "question", value=%s/>Q%s. %s</font>
+                          </div>"""%(tq, questionNum, curQuestion))
+                     optionNum=optionNum+1
+                     tqc= [str(curTitle), str(curQuestion), str(survey.option)]
+                     self.response.out.write("""<div>&nbsp &nbsp &nbsp &nbsp &nbsp &nbsp &nbsp <input type="radio" name = "question", value=%s/> C%s. %s
+                     </div>"""%(tqc, optionNum, survey.option)) 
+                 self.response.out.write(""" <input type="submit" name="button" value= "delete" />
+                         <input type="submit" name="button" value= "edit" />
+                         <input type="submit" name="button" value= "add a new question" />
+                         <input type="submit" name="button" value= "add an option" />""")    
+                 self.response.out.write(""" </form>""")
+                 self.response.out.write(""" </body></html>""")
+             else:
+                 self.response.out.write("""
+                   <html>
+                   <body>
+                     <p><big> There is no survey created.</big></p>
+                     <a href=\"/\">Back To Home Page</a>
+                   </body>
+                   </html>""" )
+                 
+            
        # else if taskChoice=="view survey results":
         #else:
     
@@ -166,11 +214,12 @@ class CreateSurvey(webapp.RequestHandler):
                    </form>
                   </body>
                  </html>""" %(title,title,account))
-                 s = Survey(account=account,
+                s = Survey(account=account,
                             title=title,
                             question=question,
-                            option=option)
-                 db.put(s)
+                            option=option,
+                            count=0)
+                db.put(s)
                 
         if queOrChoi == "next option":
             if option =="":
@@ -207,8 +256,9 @@ class CreateSurvey(webapp.RequestHandler):
                 s = Survey(account=account,
                             title=title,
                             question=question,
-                            option=option)
-                 db.put(s)
+                            option=option,
+                            count=0)
+                db.put(s)
                                             
                 
         if queOrChoi == "new survey complete":
@@ -239,8 +289,11 @@ class CreateSurvey(webapp.RequestHandler):
                  s = Survey(account=account,
                             title=title,
                             question=question,
-                            option=option)
+                            option=option,
+                            count=0)
                  db.put(s)
+                 
+#class EditSurvey(webapp.RequestHandler):
         
 application = webapp.WSGIApplication(
                                      [('/', MainPage),
