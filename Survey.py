@@ -77,35 +77,34 @@ class TaskChoice(webapp.RequestHandler):
                                   )
              if surveys.count()!=0:
                  self.response.out.write(""" <html><body>""")
-                 self.response.out.write(""" <form action="/editSurvey" method="post">""")
+                 self.response.out.write(""" <form action="/editTitle" method="post">""")
                  curTitle=""
-                 curQuestion=""
                  titleNum=0             
                  for survey in surveys:
                      if curTitle!=survey.title:
                          curTitle=survey.title
                          titleNum=titleNum+1
-                         questionNum=0
                          self.response.out.write("""<div>
-                         <input type="radio" name = "title", value=%s/>
-                         <font size = 6>%s. %s</font>
+                         <input type="radio" name = "title", value="%s"/>
+                         <font size = 4>No. %s. %s</font>
                          </div>"""%(curTitle, titleNum, curTitle))
-                     if curQuestion!=survey.question:
-                         curQuestion=survey.question
-                         questionNum=questionNum+1
-                         optionNum=0
-                         tq= [str(curTitle), str(curQuestion)] 
-                         self.response.out.write("""<div>                          
-                          &nbsp &nbsp <font size = 5><input type="radio" name = "question", value=%s/>Q%s. %s</font>
-                          </div>"""%(tq, questionNum, curQuestion))
-                     optionNum=optionNum+1
-                     tqc= [str(curTitle), str(curQuestion), str(survey.option)]
-                     self.response.out.write("""<div>&nbsp &nbsp &nbsp &nbsp &nbsp &nbsp &nbsp <input type="radio" name = "question", value=%s/> C%s. %s
-                     </div>"""%(tqc, optionNum, survey.option)) 
+                     ## if curQuestion!=survey.question:
+                 ##         curQuestion=survey.question
+                 ##         questionNum=questionNum+1
+                 ##         optionNum=0
+                 ##         tq= [str(curTitle), str(curQuestion)] 
+                 ##         self.response.out.write("""<div>                          
+                 ##          &nbsp &nbsp <font size = 5><input type="radio" name = "question", value="%s"/>Q%s. %s</font>
+                 ##          </div>"""%(tq, questionNum, curQuestion))
+                 ##     optionNum=optionNum+1
+                 ##     tqc= [str(curTitle), str(curQuestion), str(survey.option)]
+                 ##     self.response.out.write("""<div>&nbsp &nbsp &nbsp &nbsp &nbsp &nbsp &nbsp <input type="radio" name = "question", value=%s/> C%s. %s
+                 ##     </div>"""%(tqc, optionNum, survey.option)) 
                  self.response.out.write(""" <input type="submit" name="button" value= "delete" />
                          <input type="submit" name="button" value= "edit" />
                          <input type="submit" name="button" value= "add a new question" />
-                         <input type="submit" name="button" value= "add an option" />""")    
+                         <input type="submit" name="button" value= "edit questions" />
+                         <input type="hidden" name="account" value= "%s" />"""%account)    
                  self.response.out.write(""" </form>""")
                  self.response.out.write(""" </body></html>""")
              else:
@@ -120,7 +119,67 @@ class TaskChoice(webapp.RequestHandler):
             
        # else if taskChoice=="view survey results":
         #else:
-    
+
+class EditTitle(webapp.RequestHandler):
+     def post(self):
+        account=self.request.get('account')
+        opSelected=self.request.get('button')
+        title=self.request.get('title')
+        if title == "":
+            surveys = db.GqlQuery("SELECT * "
+                                   "FROM Survey "
+                                   "WHERE account = :1", account
+                                  )
+            self.response.out.write(""" <html><body>""")
+            self.response.out.write(""" You have to select a survey before selecting the operations.""")
+            self.response.out.write(""" <form action="/editTitle" method="post">""")
+            curTitle=""
+            titleNum=0             
+            for survey in surveys:
+               if curTitle!=survey.title:
+                         curTitle=survey.title
+                         titleNum=titleNum+1
+                         self.response.out.write("""<div>
+                         <input type="radio" name = "title", value="%s"/>
+                         <font size = 4>No. %s. %s</font>
+                         </div>"""%(curTitle, titleNum, curTitle))
+            self.response.out.write(""" <input type="submit" name="button" value= "delete" />
+                         <input type="submit" name="button" value= "edit" />
+                         <input type="submit" name="button" value= "add a new question" />
+                         <input type="submit" name="button" value= "edit questions" />
+                         <input type="hidden" name="account" value= "%s" />"""%account)
+            self.response.out.write(""" </form>""")
+            self.response.out.write(""" </body></html>""")
+                             
+        else:
+            if opSelected == "delete":
+               print '%s'%title
+            if opSelected == "edit questions":
+                self.response.out.write(""" <html><body>""")
+                self.response.out.write(""" <form action="/editQuestion" method="post">""")
+                curQuestion=""
+                questionNum=0   
+                questions = db.GqlQuery("SELECT * "
+                                   "FROM Survey "
+                                   "WHERE account = :1 and title =  :2", account, title
+                                  )
+                for question in questions:
+                     if curQuestion!=question.question:
+                         curQuestion=question.question
+                         questionNum=questionNum+1
+                         self.response.out.write("""<div>
+                         <input type="radio" name = "title", value="%s"/>
+                         <font size = 4>Q%s. %s</font>
+                         </div>"""%(curQuestion, questionNum, curQuestion))
+                self.response.out.write(""" <input type="submit" name="button" value= "delete" />
+                         <input type="submit" name="button" value= "edit" />
+                         <input type="submit" name="button" value= "add an option" />
+                         <input type="submit" name="button" value= "edit options" />
+                         <input type="hidden" name="account" value= "%s" />
+                         <input type="hidden" name="title" value= "%s" />"""%(account,title))    
+                self.response.out.write(""" </form>""")
+                self.response.out.write(""" </body></html>""")
+                         
 class CreateSurvey(webapp.RequestHandler):
     def post(self):
         account=self.request.get('account')
@@ -293,12 +352,13 @@ class CreateSurvey(webapp.RequestHandler):
                             count=0)
                  db.put(s)
                  
-#class EditSurvey(webapp.RequestHandler):
-        
+
+                
 application = webapp.WSGIApplication(
                                      [('/', MainPage),
                                       ('/sign', TaskChoice),
-                                       ('/newSurvey', CreateSurvey)],
+                                       ('/newSurvey', CreateSurvey),
+                                       ('/editTitle', EditTitle)],
                                      debug=True)
 
 def main():
