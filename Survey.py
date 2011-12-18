@@ -12,6 +12,7 @@ class Survey(db.Model):
     question = db.StringProperty()
     option = db.StringProperty()
     count = db.IntegerProperty()
+    picture = db.BlobProperty()
     date = db.DateTimeProperty(auto_now_add=True)
     
 class MyVote(db.Model):
@@ -59,7 +60,7 @@ def printVoteResult(voter, title, account, self):
         self.response.out.write("""<font size=4>Survey: %s(%s)</font></br>"""%(cgi.escape(title), cgi.escape(account)))
         qNum=1
         for result in results:
-             self.response.out.write("""Q%s. %s</br>"""%(cgi.escape(qNum),cgi.escape(result.question)))
+             self.response.out.write("""Q%s. %s</br>"""%(qNum,cgi.escape(result.question)))
              self.response.out.write("""Your choice: %s</br></br></br>"""%cgi.escape(result.option))
              qNum=qNum+1
              
@@ -98,23 +99,30 @@ def listOptions(self,voter,title,account,flag,index):
          options =  db.GqlQuery("SELECT * "
                                 "FROM Survey "
                                 "WHERE account = :1 and title = :2 and question = :3", account, title, curQ)
-         optionlist= getuniqlist(options, "option")
+             #optionlist= getuniqlist(options, "option")
          oNum=1;
-         for option in optionlist:
+         for entry in options:
              if flag=="change":
                  questions = db.GqlQuery("SELECT * "
                             "FROM MyVote "
-                            "WHERE author = :1 and title = :2 and question = :3 and option = :4 and account =:5", account,title,curQ,option,voter)
+                            "WHERE author = :1 and title = :2 and question = :3 and option = :4 and account =:5", account,title,curQ,entry.option,voter)
                  if questions.count()!=0:
-                     self.response.out.write("<div>  Your answer: C%s.%s</div>" %(cgi.escape(oNum),cgi.escape(option)))
-                     old_option=option
+                     self.response.out.write("<div>  Your answer: C%s.%s</div>" %(oNum,cgi.escape(entry.option)))
+                     if entry.picture:
+                         self.response.out.write("<div><img src='img?img_id=%s'></img>" %entry.key())
+                     old_option=entry.option
                  else:
                      self.response.out.write("""
-                     <div><input type="radio" name = "option", value="%s"/><font size = 4>C%s.%s</font></div>"""%(cgi.escape(option),oNum,cgi.escape(option)))
+                     <div><input type="radio" name = "option", value="%s"/><font size = 4>C%s.%s</font></div>"""
+                         %(cgi.escape(entry.option),oNum,cgi.escape(entry.option)))
+                     if entry.picture:
+                         self.response.out.write("<div><img src='img?img_id=%s'></img>" %entry.key())
              if flag=="vote":
                  self.response.out.write("""
                  <div><input type="radio" name = "option", value="%s"/><font size = 4>C%s.%s</font></div>"""
-                     %(cgi.escape(option),oNum,cgi.escape(option)))
+                     %(cgi.escape(entry.option),oNum,cgi.escape(entry.option)))
+                 if entry.picture:
+                     self.response.out.write("<div><img src='img?img_id=%s'></img>" %entry.key())
              oNum=oNum+1
          if flag=="vote":
              self.response.out.write("""<div><input type="submit" name="button" value="next question">
@@ -361,18 +369,21 @@ def listObyATQ(account,title,question,self,ErrorMsg):
     if options.count()!=0:
         self.response.out.write("""
         <html><body>
-        <form action="/editOption" method="post">
+        <form action="/editOption" enctype="multipart/form-data" method="post">
         <p><big>%s - %s </big><a href=\"/\">Back To Home Page</a></p>""" %(cgi.escape(title),cgi.escape(question)))
 
         if ErrorMsg!="":
             self.response.out.write("""
             %s""" %cgi.escape(ErrorMsg))
 
-        newlist=getuniqlist(options,"option")
+        #newlist=getuniqlist(options,"option")
         option_num=1
-        for entry in newlist:
+        for entry in options:
             self.response.out.write("""
-            <div><input type="radio" name = "option", value="%s"/><font size = 4>Q%s. %s</font></div>"""%(cgi.escape(entry), option_num, cgi.escape(entry)))
+            <div><input type="radio" name = "option", value="%s"/><font size = 4>C%s. %s</font></div>"""
+            %(cgi.escape(entry.option), option_num, cgi.escape(entry.option)))
+            if entry.picture:
+                self.response.out.write("<div><img src='img?img_id=%s'></img></div>"%entry.key())
             option_num=option_num+1
 
         self.response.out.write("""
@@ -461,8 +472,11 @@ def defquestion(account,title,question,flag,old_question,self):
                 self.response.out.write("""
                 <html><body>
                 <p><big> Add an option for question "%s--%s":</big></p> 
-                <form action="/newSurvey" method="post">
+                <form action="/newSurvey" enctype="multipart/form-data" method="post">
+                <div><label>Message:</label></div>
                 <div><textarea name="option" rows="3" cols="60"></textarea></div>
+                <div><label>Image:</label></div>
+                <div><input type="file" name="img" /></div>
                 <div><input type="submit" name="button" value="next question"><input type="submit" name="button" value="next option">
                 <input type="submit" name="button" value="complete"></div>
                 <input type="hidden" name="question" value="%s" />
@@ -485,13 +499,13 @@ def defquestion(account,title,question,flag,old_question,self):
         if flag=="create":
             self.response.out.write("""
             <html><body>
-            <p><big> %s</big></p>
+            <p><big> This survey is %s.<br />%s</big></p>
             <form action="/newSurvey" method="post">
             <div><textarea name="question" rows="3" cols="60"></textarea></div>
             <div><input type="submit" name="button" value="add an option"></div>
             <input type="hidden" name="title" value="%s" />
             <input type="hidden" name="account" value="%s" />
-            </form></body></html>""" % (cgi.escape(errorMsg),cgi.escape(title), cgi.escape(account)))
+            </form></body></html>""" % (cgi.escape(title),cgi.escape(errorMsg),cgi.escape(title), cgi.escape(account)))
         if flag=="edit":
             self.response.out.write("""
             <html><body>
@@ -507,18 +521,26 @@ def defquestion(account,title,question,flag,old_question,self):
             </form></body></html>""" %(cgi.escape(old_question),cgi.escape(errorMsg), cgi.escape(title), cgi.escape(old_question), cgi.escape(account)))
     return
 
-def defoption_question(account,title,question,option,self):
+def defoption_question(account,title,question,option,self,picture):
     errorMsg=""
     if option != "":
         existSurvey = db.GqlQuery("SELECT * "
                                   "FROM Survey "
                                   "WHERE account = :1 and title = :2 and question = :3 and option = :4", account, title, question, option)
         if existSurvey.count() == 0:
-            s = Survey(account=account,
-                        title=title,
-                        question=question,
-                        option=option,
-                        count=0)
+            if picture:
+                s = Survey(account=account,
+                                   title=title,
+                                   question=question,
+                                   option=option,
+                                   count=0,
+                                   picture=db.Blob(picture))
+            else:
+                s = Survey(account=account,
+                                   title=title,
+                                   question=question,
+                                   option=option,
+                                   count=0)
             db.put(s)
             vc = VoteCount(account=account,
                            title=title,
@@ -535,7 +557,11 @@ def defoption_question(account,title,question,option,self):
             num=1
             for entry in newlist:
                 self.response.out.write("""
-                <p>Q%s. %s</p>""" %(num,cgi.escape(entry)))
+                <div><p>Q%s. %s """ %(num,cgi.escape(entry.option)))
+                if entry.picture:
+                    self.response.out.write("""
+                    <img src ='img?img_id=%s'></img>""" %entry.key())
+                self.response.out.write("</p></div>")
                 num=num+1
             self.response.out.write("""
             <div><textarea name="question" rows="3" cols="60"></textarea></div>
@@ -550,18 +576,25 @@ def defoption_question(account,title,question,option,self):
     if errorMsg!="":
         self.response.out.write("""
         <html><body>
-        <p><big> %s</big></p> 
-        <form action="/newSurvey" method="post">""" %cgi.escape(errorMsg))
+        <p><big> Add an option for question %s--%s.<br /> %s</big></p> 
+        <form action="/newSurvey" enctype="multipart/form-data" method="post">""" %(cgi.escape(title),cgi.escape(question),cgi.escape(errorMsg)))
         sets = db.GqlQuery("SELECT * "
                             "FROM Survey "
                             "WHERE account = :1 and title = :2 and question = :3", account, title, question)
         num=1
         for entry in sets:
             self.response.out.write("""
-            <p>C%s. %s</p>""" %(num,cgi.escape(entry.option)))
+            <div><p>Q%s. %s</p> """ %(num,cgi.escape(entry.option)))
+            if entry.picture:
+                self.response.out.write("""
+                <img src ='img?img_id=%s'></img>""" %entry.key())
+            self.response.out.write("</div>")
             num=num+1
         self.response.out.write("""
+        <div><label>Message:</label></div>
         <div><textarea name="option" rows="3" cols="60"></textarea></div>
+        <div><label>Image:</label></div>
+        <div><input type="file" name="img" /></div>
         <div><input type="submit" name="button" value="next question"><input type="submit" name="button" value="next option">
         <input type="submit" name="button" value="complete"></div>
         <input type="hidden" name="question" value="%s" />
@@ -570,7 +603,7 @@ def defoption_question(account,title,question,option,self):
         </form></body></html>""" % (cgi.escape(question), cgi.escape(title), cgi.escape(account)))
     return
 
-def defoption_option(account,title,question,option,flag,old_option,self):
+def defoption_option(account,title,question,option,flag,old_option,self,picture):
     errorMsg=""
     if option != "":
         existSurvey = db.GqlQuery("SELECT * "
@@ -578,11 +611,19 @@ def defoption_option(account,title,question,option,flag,old_option,self):
                                   "WHERE account = :1 and title = :2 and question = :3 and option = :4", account, title, question, option)
         if existSurvey.count() == 0:
             if flag=="create":
-                s = Survey(account=account,
-                           title=title,
-                           question=question,
-                           option=option,
-                           count=0)
+                if picture:
+                    s = Survey(account=account,
+                               title=title,
+                               question=question,
+                               option=option,
+                               count=0,
+                               picture=db.Blob(picture))
+                else:
+                    s = Survey(account=account,
+                               title=title,
+                               question=question,
+                               option=option,
+                               count=0)
                 db.put(s)
                 vc = VoteCount(account=account,
                            title=title,
@@ -592,17 +633,24 @@ def defoption_option(account,title,question,option,flag,old_option,self):
                 self.response.out.write("""
                 <html><body>
                 <p><big> Add a option for question "%s--%s":</big></p>
-                <form action="/newSurvey" method="post">""" %(cgi.escape(title),cgi.escape(question)))
+                <form action="/newSurvey" enctype="multipart/form-data" method="post">""" %(cgi.escape(title),cgi.escape(question)))
                 sets = db.GqlQuery("SELECT * "
                                    "FROM Survey "
                                    "WHERE account = :1 and title = :2 and question = :3", account, title, question)
                 num=1
                 for entry in sets:
                     self.response.out.write("""
-                    <p>C%s. %s</p>""" %(num,cgi.escape(entry.option)))
+                    <div><p>Q%s. %s</p> """ %(num,cgi.escape(entry.option)))
+                    if entry.picture:
+                        self.response.out.write("""
+                        <img src ='img?img_id=%s'></img>""" %entry.key())
+                    self.response.out.write("</div>")
                     num=num+1
                 self.response.out.write("""
+                <div><label>Message:</label></div>
                 <div><textarea name="option" rows="3" cols="60"></textarea></div>
+                <div><label>Image:</label></div>
+                <div><input type="file" name="img" /></div>
                 <div><input type="submit" name="button" value="next question"><input type="submit" name="button" value="next option">
                 <input type="submit" name="button" value="complete"></div>
                 <input type="hidden" name="question" value="%s" />
@@ -614,9 +662,25 @@ def defoption_option(account,title,question,option,flag,old_option,self):
                                       "FROM Survey "
                                       "WHERE account = :1 and title = :2 and question =:3 and option = :4",
                                       account, title, question, old_option)
-                for survey in surveys:
-                    survey.option=option
-                    survey.put()
+                db.delete(surveys)
+                if picture:
+                    s = Survey(account=account,
+                               title=title,
+                               question=question,
+                               option=option,
+                               count=0,
+                               picture=db.Blob(picture))
+                else:
+                    s = Survey(account=account,
+                               title=title,
+                               question=question,
+                               option=option,
+                               count=0)
+                db.put(s)
+                #for survey in surveys:
+                #   survey.option=option
+                #    survey.put()
+                    
                 listObyATQ(account,title,question,self,"The option name is updated.")
         else:
             errorMsg="The option you input exists! Please input another one:"
@@ -626,18 +690,25 @@ def defoption_option(account,title,question,option,flag,old_option,self):
         if flag=="create":
             self.response.out.write("""
             <html><body>
-            <p><big> %s</big></p> 
-            <form action="/newSurvey" method="post">""" %cgi.escape(errorMsg))
+            <p><big> Add an option for question %s--%s.<br />%s</big></p> 
+            <form action="/newSurvey" enctype="multipart/form-data" method="post">""" %(cgi.escape(title),cgi.escape(question),cgi.escape(errorMsg)))
             sets = db.GqlQuery("SELECT * "
                                "FROM Survey "
                                "WHERE account = :1 and title = :2 and question = :3", account, title, question)
             num=1
             for entry in sets:
                 self.response.out.write("""
-                <p>C%s. %s</p>""" %(num,cgi.escape(entry.option)))
+                <div><p>Q%s. %s</p> """ %(num,cgi.escape(entry.option)))
+                if entry.picture:
+                    self.response.out.write("""
+                    <img src ='img?img_id=%s'></img>""" %entry.key())
+                self.response.out.write("</div>")
                 num=num+1
             self.response.out.write("""
+            <div><label>Message:</label></div>
             <div><textarea name="option" rows="3" cols="60"></textarea></div>
+            <div><label>Image:</label></div>
+            <div><input type="file" name="img" /></div>
             <div><input type="submit" name="button" value="next question"><input type="submit" name="button" value="next option">
             <input type="submit" name="button" value="complete"></div>
             <input type="hidden" name="question" value="%s" />
@@ -649,8 +720,11 @@ def defoption_option(account,title,question,option,flag,old_option,self):
             <html><body>
             <p><big> The option is about to be modified is:%s </big><a href=\"/\">Back To Home Page</a></p>
             <p><big> %s </big></p>
-            <form action="/updateText" method="post">
+            <form action="/updateText" enctype="multipart/form-data" method="post">
+            <div><label>Message:</label></div>
             <div><textarea name="newOption" rows="3" cols="60"></textarea></div>
+            <div><label>Picture:</label></div>
+            <div><input type="file" name="img"/></div>
             <div><input type="submit" name="button" value="submit"></div>
             <input type="hidden" name="title" value="%s" />
             <input type="hidden" name="question" value="%s" />
@@ -661,7 +735,7 @@ def defoption_option(account,title,question,option,flag,old_option,self):
             %(cgi.escape(option),cgi.escape(errorMsg), cgi.escape(title), cgi.escape(question), cgi.escape(old_option), cgi.escape(account)))
     return
 
-def defoption_complete(account,title,question,option,self):
+def defoption_complete(account,title,question,option,self,picture):
     errorMsg=""
     if option != "":
         existSurvey = db.GqlQuery("SELECT * "
@@ -673,12 +747,19 @@ def defoption_complete(account,title,question,option,self):
             <p><big> Finished!</big></p>
             <a href=\"/\">Back To Home Page</a>
             </body></html>""" )
-
-            s = Survey(account=account,
-                      title=title,
-                      question=question,
-                      option=option,
-                      count=0)
+            if picture:
+                s = Survey(account=account,
+                           title=title,
+                           question=question,
+                           option=option,
+                           count=0,
+                           picture=db.Blob(picture))
+            else:
+                s = Survey(account=account,
+                           title=title,
+                           question=question,
+                           option=option,
+                           count=0)
             db.put(s)
             vc = VoteCount(account=account,
                            title=title,
@@ -691,18 +772,25 @@ def defoption_complete(account,title,question,option,self):
     if errorMsg!="":
         self.response.out.write("""
         <html><body>
-        <p><big> %s</big></p> 
-        <form action="/newSurvey" method="post">""" %cgi.escape(errorMsg))
+        <p><big> Add an option for question %s--%s.<br />%s</big></p> 
+        <form action="/newSurvey" enctype="multipart/form-data" method="post">""" %(cgi.escape(title),cgi.escape(question),cgi.escape(errorMsg)))
         sets = db.GqlQuery("SELECT * "
                             "FROM Survey "
                             "WHERE account = :1 and title = :2 and question = :3", account, title, question)
         num=1
         for entry in sets:
             self.response.out.write("""
-            <p>C%s. %s</p>""" %(num,cgi.escape(entry.option)))
+            <div><p>Q%s. %s</p> """ %(num,cgi.escape(entry.option)))
+            if entry.picture:
+                self.response.out.write("""
+                <img src ='img?img_id=%s'></img>""" %entry.key())
+            self.response.out.write("</div>")
             num=num+1
         self.response.out.write("""
+        <div><label>Message:</label></div>
         <div><textarea name="option" rows="3" cols="60"></textarea></div>
+        <div><label>Image:</label></div>
+        <div><input type="file" name="img" /></div>
         <div><input type="submit" name="button" value="next question"><input type="submit" name="button" value="next option">
         <input type="submit" name="button" value="complete"></div>
         <input type="hidden" name="question" value="%s" />
@@ -792,12 +880,13 @@ class UpdateText(webapp.RequestHandler):
         newQuestion=self.request.get('newQuestion')
         newOption=self.request.get('newOption')
         choice=self.request.get('choice')
+        picture=self.request.get('img')
         if choice=="update title":
             defsurvey_title(account,newTitle,"edit",title,self)
         if choice=="update question":
             defquestion(account,title,newQuestion,"edit",question,self)
         if choice=="update option":
-            defoption_option(account,title,question,newOption,"edit",option,self)
+            defoption_option(account,title,question,newOption,"edit",option,self,picture)
             
 class EditTitle(webapp.RequestHandler):
      def post(self):
@@ -843,6 +932,7 @@ class EditQuestion(webapp.RequestHandler):
         title=self.request.get('title')
         question = self.request.get('question')
         option = ""
+        picture=""
         if question == "":
             listQbyAT(account,title,self," You have to select a question before selecting the operations")
         else:
@@ -869,7 +959,7 @@ class EditQuestion(webapp.RequestHandler):
                     </body>
                  </html>""" %(cgi.escape(question), cgi.escape(title), cgi.escape(question), cgi.escape(account)))
             if opSelected == "add option":
-                defoption_question(account, title, question, option, self)
+                defoption_question(account, title, question, option, self,picture)
                 
             if opSelected == "edit option":
                 listObyATQ(account,title,question,self,"")
@@ -894,21 +984,21 @@ class EditOption(webapp.RequestHandler):
                  
             if opSelected == "edit option name":
                   self.response.out.write("""
-                  <html>
-                     <body>
-                       <p><big> The option is about to be modified is:%s </big><a href=\"/\">Back To Home Page</a></p>
-                       <p><big> Please give the new option: </big></p>
-                       <form action="/updateText" method="post">
-                         <div><textarea name="newOption" rows="3" cols="60"></textarea></div>
-                         <div><input type="submit" name="button" value="submit"></div>
-                              <input type="hidden" name="title" value="%s" />
-                              <input type="hidden" name="question" value="%s" />
-                              <input type="hidden" name="option" value="%s" />
-                              <input type="hidden" name="account" value="%s" />
-                              <input type="hidden" name="choice" value="update option" />
-                      </form>
-                    </body>
-                 </html>""" %(cgi.escape(option), cgi.escape(title), cgi.escape(question), cgi.escape(option), cgi.escape(account)))
+                  <html><body>
+                  <p><big> The option is about to be modified is:%s </big><a href=\"/\">Back To Home Page</a></p>
+                  <p><big> Please give the new option: </big></p>
+                  <form action="/updateText" enctype="multipart/form-data" method="post">
+                  <div><label>Message:</label></div>
+                  <div><textarea name="newOption" rows="3" cols="60"></textarea></div>
+                  <div><label>Picture:</label></div>
+                  <div><input type="file" name="img"/></div>
+                  <div><input type="submit" name="button" value="submit"></div>
+                  <input type="hidden" name="title" value="%s" />
+                  <input type="hidden" name="question" value="%s" />
+                  <input type="hidden" name="option" value="%s" />
+                  <input type="hidden" name="account" value="%s" />
+                  <input type="hidden" name="choice" value="update option" />
+                  </form></body></html>""" %(cgi.escape(option), cgi.escape(title), cgi.escape(question), cgi.escape(option), cgi.escape(account)))
 
 class GetAuthor(webapp.RequestHandler):
     def post(self):
@@ -954,8 +1044,11 @@ class DisplayResult(webapp.RequestHandler):
                         option_num=1
                         for item in options:
                             self.response.out.write("""
-                              C%s. %s   --   %s<br \>""" %(option_num,cgi.escape(item.option),item.count))
+                              &nbsp &nbsp C%s. %s -- <big>%s people voted</big> """ %(option_num,cgi.escape(item.option),item.count))
+                            if item.picture:
+                                 self.response.out.write("<div><img src='img?img_id=%s'></img></div>" %item.key())
                             option_num=option_num+1
+                            self.response.out.write("<br />")
                         self.response.out.write("</p>")
                     self.response.out.write("""<br />
                     <a href=\"/\">Back To Home Page</a>
@@ -1118,19 +1211,31 @@ class CreateSurvey(webapp.RequestHandler):
         title=self.request.get('title')
         question=self.request.get('question')
         option=self.request.get('option')
+        picture=self.request.get("img")
         if queOrChoi == "add a new question":
             defsurvey_title(account,title,"create","",self)
         if queOrChoi == "add an option":
             defquestion(account,title,question,"create","",self)
         if queOrChoi == "next question":
-            defoption_question(account,title,question,option,self)
+            defoption_question(account,title,question,option,self,picture)
         if queOrChoi == "next option":
-            defoption_option(account,title,question,option,"create","",self)
+            defoption_option(account,title,question,option,"create","",self,picture)
         if queOrChoi == "complete":
-            defoption_complete(account,title,question,option,self)
+            defoption_complete(account,title,question,option,self,picture)
+
+
+class Image(webapp.RequestHandler):
+    def get(self):
+        surveys = db.get(self.request.get("img_id"))
+        if surveys.picture:
+            self.response.headers['Content-Type'] = "image/png"
+            self.response.out.write(surveys.picture)
+            #  else:
+            #self.response.out.write("No image")
                         
 application = webapp.WSGIApplication(
                                      [('/', MainPage),
+                                      ('/img', Image),
                                       ('/sign', TaskChoice),
                                        ('/newSurvey', CreateSurvey),
                                        ('/editTitle', EditTitle),
