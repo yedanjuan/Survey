@@ -1,4 +1,5 @@
 import cgi
+import datetime
 
 from google.appengine.api import users
 from google.appengine.ext import webapp
@@ -11,6 +12,7 @@ class Survey(db.Model):
     question = db.StringProperty()
     option = db.StringProperty()
     count = db.IntegerProperty()
+    date = db.DateTimeProperty(auto_now_add=True)
     
 class MyVote(db.Model):
     account = db.StringProperty()
@@ -24,6 +26,12 @@ class VoteCount(db.Model):
     title = db.StringProperty()
     count = db.IntegerProperty()
     
+class Comment(db.Model):
+    account = db.StringProperty()
+    author = db.StringProperty()
+    title = db.StringProperty()
+    content = db.StringProperty(multiline=True)
+    date = db.DateTimeProperty(auto_now_add=True)
     
 def getuniqlist(mylist,attribute):
     newlist = []
@@ -48,12 +56,25 @@ def printVoteResult(voter, title, account, self):
         results = db.GqlQuery("SELECT * "
                             "FROM MyVote "
                             "WHERE account = :1 and title = :2 and author =:3", voter, title, account)
-        self.response.out.write("""<font size=5>%s(%s)</font></br>"""%(title, account))
+        self.response.out.write("""<font size=4>Survey: %s(%s)</font></br>"""%(cgi.escape(title), cgi.escape(account)))
         qNum=1
         for result in results:
-             self.response.out.write("""Q%s. %s</br>"""%(qNum,result.question))
-             self.response.out.write("""&nbsp &nbsp  %s</br>"""%result.option)
+             self.response.out.write("""Q%s. %s</br>"""%(cgi.escape(qNum),cgi.escape(result.question)))
+             self.response.out.write("""Your choice: %s</br></br></br>"""%cgi.escape(result.option))
              qNum=qNum+1
+             
+        self.response.out.write("""
+        <html><body>
+        <form action="/addComment" method="post">""")
+        self.response.out.write("""Would you please give some comments for this survey: </br>""")
+        self.response.out.write("""<div><textarea name="comment" rows="5" cols="60"></textarea></div>""")
+        self.response.out.write("""<div><input type="submit" name="button" value="submit"></div>""")
+        self.response.out.write("""
+                      <input type="hidden" name="voter" value="%s">
+                      <input type="hidden" name="title" value="%s">
+                      <input type="hidden" name="account" value="%s">
+                      </form></body></html>""" %(cgi.escape(voter),cgi.escape(title),cgi.escape(account)))
+        
 #list all the uniq author by survey:
 def listOptions(self,voter,title,account,flag,index):
     
@@ -73,18 +94,37 @@ def listOptions(self,voter,title,account,flag,index):
          self.response.out.write("""
          <html><body>
          <form action="/voteOptions" method="post">""")
-         self.response.out.write(""" <font size=5>Q%s. %s</font>"""%(queIndex,curQ))
+         self.response.out.write(""" <font size=5>Q%s. %s</font>"""%(queIndex,cgi.escape(curQ)))
          options =  db.GqlQuery("SELECT * "
                                 "FROM Survey "
                                 "WHERE account = :1 and title = :2 and question = :3", account, title, curQ)
          optionlist= getuniqlist(options, "option")
          oNum=1;
          for option in optionlist:
-              self.response.out.write("""
-              <div><input type="radio" name = "option", value="%s"/><font size = 4>C%s.%s</font></div>"""%(option,oNum,option))
-              oNum=oNum+1
-         self.response.out.write("""<div><input type="submit" name="button" value="next question">
+             if flag=="change":
+                 questions = db.GqlQuery("SELECT * "
+                            "FROM MyVote "
+                            "WHERE author = :1 and title = :2 and question = :3 and option = :4 and account =:5", account,title,curQ,option,voter)
+                 if questions.count()!=0:
+                     self.response.out.write("<div>  Your answer: C%s.%s</div>" %(cgi.escape(oNum),cgi.escape(option)))
+                     old_option=option
+                 else:
+                     self.response.out.write("""
+                     <div><input type="radio" name = "option", value="%s"/><font size = 4>C%s.%s</font></div>"""%(cgi.escape(option),oNum,cgi.escape(option)))
+             if flag=="vote":
+                 self.response.out.write("""
+                 <div><input type="radio" name = "option", value="%s"/><font size = 4>C%s.%s</font></div>"""
+                     %(cgi.escape(option),oNum,cgi.escape(option)))
+             oNum=oNum+1
+         if flag=="vote":
+             self.response.out.write("""<div><input type="submit" name="button" value="next question">
                                            <input type="submit" name="button" value="skip to the end"></div>""")
+         if flag=="change":
+             self.response.out.write("""<div><input type="submit" name="button" value="change">
+                                           <input type="submit" name="button" value="change and next">
+                                           <input type="submit" name="button" value="next"></div>
+                                           <input type="hidden" name="old option" value="%s" >""" %cgi.escape(old_option))
+          
          self.response.out.write("""
                       <input type="hidden" name="voter" value="%s">
                       <input type="hidden" name="title" value="%s">
@@ -92,7 +132,7 @@ def listOptions(self,voter,title,account,flag,index):
                       <input type="hidden" name="question" value="%s">
                       <input type="hidden" name="index" value="%s">
                       <input type="hidden" name="flag" value="%s">
-                      </form></body></html>""" %(voter,title,account,curQ,queIndex,flag))
+                      </form></body></html>"""%(cgi.escape(voter),cgi.escape(title),cgi.escape(account),cgi.escape(curQ),queIndex,flag))
  
 def listAuthorbySurvey(self,voter,title,flag,ErrorMsg):
     surveys = db.GqlQuery("SELECT * "
@@ -105,7 +145,7 @@ def listAuthorbySurvey(self,voter,title,flag,ErrorMsg):
 
         if ErrorMsg!="":
             self.response.out.write("""
-            %s  <a href=\"/\">Back To Home Page</a>""" %ErrorMsg)
+            %s  <a href=\"/\">Back To Home Page</a>""" %cgi.escape(ErrorMsg))
 
         newlist=getuniqlist(surveys,"account")
         if flag=="vote":
@@ -122,27 +162,41 @@ def listAuthorbySurvey(self,voter,title,flag,ErrorMsg):
                             break
                     if isVoted==0:
                         notVotedSurvey.append(survey)
-                newlist=getuniqlist(notVotedSurvey,"account")            
+                newlist=getuniqlist(notVotedSurvey,"account")
+        if flag=="change":
+            votedSurveys = db.GqlQuery("SELECT * "
+                          "FROM MyVote "
+                          "WHERE account = :1 and title = :2", voter,title)
+            if votedSurveys.count()!=0:
+                votedSurvey=[]
+                for survey in surveys:
+                    for voted in votedSurveys:
+                        if voted.author == survey.account and voted.title == survey.title:
+                            votedSurvey.append(survey)
+                            break
+                newlist=getuniqlist(votedSurvey,"account") 
         account_num=1
         for entry in newlist:
             self.response.out.write("""
-            <div><input type="radio" name = "account", value="%s"/><font size = 4>Author %s. %s</font></div>"""%(entry, account_num, entry))
+            <div><input type="radio" name = "account", value="%s"/><font size = 4>Author %s. %s</font></div>"""
+            %(cgi.escape(entry), account_num, cgi.escape(entry)))
             account_num=account_num+1
 
-        self.response.out.write("""
-        <input type="hidden" name="title" value= "%s" />"""%title)
         if flag=="vote":
             self.response.out.write("""
             <input type="submit" name="button" value= "vote" />""")
         if flag=="result":
             self.response.out.write("""
             <input type="submit" name="button" value= "result" />""")
+        if flag=="change":
+            self.response.out.write("""
+            <input type="submit" name="button" value= "change" />""")
 
         self.response.out.write("""
         <input type="hidden" name="title" value= "%s" />
         <input type="hidden" name="flag" value=  "%s" />
         <input type="hidden" name="voter" value="%s" />
-        </form></body></html>"""%(title,flag,voter))
+        </form></body></html>"""%(cgi.escape(title),flag,cgi.escape(voter)))
     else:
         self.response.out.write("""
         <html><body>
@@ -162,13 +216,13 @@ def listsurveyTitlebyAccount(account,self,ErrorMsg):
 
         if ErrorMsg!="":
             self.response.out.write("""
-            %s  <a href=\"/\">Back To Home Page</a>""" %ErrorMsg)
+            %s  <a href=\"/\">Back To Home Page</a>""" %cgi.escape(ErrorMsg))
 
         newlist=getuniqlist(surveys,"title")
         title_num=1
         for entry in newlist:
             self.response.out.write("""
-            <div><input type="radio" name = "title", value="%s"/><font size = 4>No. %s. %s</font></div>"""%(entry, title_num, entry))
+            <div><input type="radio" name = "title", value="%s"/><font size = 4>No. %s. %s</font></div>"""%(cgi.escape(entry), title_num, cgi.escape(entry)))
             title_num=title_num+1
 
         self.response.out.write("""
@@ -176,7 +230,7 @@ def listsurveyTitlebyAccount(account,self,ErrorMsg):
         <input type="submit" name="button" value= "edit title" />
         <input type="submit" name="button" value= "add question" />
         <input type="submit" name="button" value= "edit question" />
-        <input type="hidden" name="account" value= "%s" />"""%account)
+        <input type="hidden" name="account" value= "%s" />"""%cgi.escape(account))
 
         self.response.out.write(""" </form>""")
         self.response.out.write(""" </body></html>""")
@@ -199,15 +253,27 @@ def listsurveyTitle(voter,self,flag,ErrorMsg):
 
         if ErrorMsg!="":
             self.response.out.write("""
-            %s  <a href=\"/\">Back To Home Page</a>""" %ErrorMsg)         
+            %s  <a href=\"/\">Back To Home Page</a>""" %cgi.escape(ErrorMsg))
 
         newlist=getuniqlist(surveys,"title")
+        if flag=="change":
+            votedSurveys = db.GqlQuery("SELECT * "
+                          "FROM MyVote "
+                          "WHERE account = :1", voter)
+            if votedSurveys.count()!=0:
+                votedSurvey=[]
+                for survey in surveys:
+                    isVoted=0
+                    for voted in votedSurveys:
+                        if voted.author == survey.account and voted.title == survey.title:
+                            votedSurvey.append(survey)
+                            break
+                newlist=getuniqlist(votedSurvey,"title")
         if flag=="vote":
             votedSurveys = db.GqlQuery("SELECT * "
                           "FROM MyVote "
                           "WHERE account = :1", voter)
             if votedSurveys.count()!=0:
-                #print "%s"%votedSurveys.count() 
                 notVotedSurvey=[]
                 for survey in surveys:
                     isVoted=0
@@ -221,7 +287,7 @@ def listsurveyTitle(voter,self,flag,ErrorMsg):
         title_num=1
         for entry in newlist:
             self.response.out.write("""
-            <div><input type="radio" name = "title", value="%s"/><font size = 4>No.%s %s</font></div>"""%(entry, title_num, entry))
+            <div><input type="radio" name = "title", value="%s"/><font size = 4>No.%s %s</font></div>"""%(cgi.escape(entry), title_num, cgi.escape(entry)))
             title_num=title_num+1
 
         if flag=="vote":
@@ -233,11 +299,14 @@ def listsurveyTitle(voter,self,flag,ErrorMsg):
         if flag=="result":
             self.response.out.write("""
             <input type="submit" name="button" value= "result" />""")
+        if flag=="change":
+            self.response.out.write("""
+            <input type="submit" name="button" value= "change" />""")
 
         self.response.out.write("""
         <input type="hidden" name="voter" value="%s">
         <input type="hidden" name="flag" value="%s">
-        </form></body></html>""" %(voter,flag))
+        </form></body></html>""" %(cgi.escape(voter),flag))
     else:
         self.response.out.write("""
         <html><body>
@@ -254,17 +323,17 @@ def listQbyAT(account,title,self,ErrorMsg):
         self.response.out.write("""
         <html><body>
         <form action="/editQuestion" method="post">
-        <p><big>The survey title is %s. </big><a href=\"/\">Back To Home Page</a></p>""" %title)
+        <p><big>The survey title is %s. </big><a href=\"/\">Back To Home Page</a></p>""" %cgi.escape(title))
 
         if ErrorMsg!="":
             self.response.out.write("""
-            %s""" %ErrorMsg)
+            %s""" %cgi.escape(ErrorMsg))
 
         newlist=getuniqlist(questions,"question")
         question_num=1
         for entry in newlist:
             self.response.out.write("""
-            <div><input type="radio" name = "question", value="%s"/><font size = 4>Q%s. %s</font></div>"""%(entry, question_num, entry))
+            <div><input type="radio" name = "question", value="%s"/><font size = 4>Q%s. %s</font></div>"""%(cgi.escape(entry), question_num, cgi.escape(entry)))
             question_num=question_num+1
 
         self.response.out.write("""
@@ -273,7 +342,7 @@ def listQbyAT(account,title,self,ErrorMsg):
         <input type="submit" name="button" value= "add option" />
         <input type="submit" name="button" value= "edit option" />
         <input type="hidden" name="account" value= "%s" />
-        <input type="hidden" name="title" value= "%s" /> """%(account,title))
+        <input type="hidden" name="title" value= "%s" /> """%(cgi.escape(account),cgi.escape(title)))
 
         self.response.out.write(""" </form>""")
         self.response.out.write(""" </body></html>""")
@@ -281,7 +350,7 @@ def listQbyAT(account,title,self,ErrorMsg):
         self.response.out.write("""
         <html><body>
         <p><big> There is no questions in the survey %s.</big></p>
-        </body></html>""" % title )
+        </body></html>""" % cgi.escape(title) )
     return
 
 #list all the uniq option name belong to the login account&&specified title$$specified question:
@@ -293,17 +362,17 @@ def listObyATQ(account,title,question,self,ErrorMsg):
         self.response.out.write("""
         <html><body>
         <form action="/editOption" method="post">
-        <p><big>%s - %s </big><a href=\"/\">Back To Home Page</a></p>""" %(title,question))
+        <p><big>%s - %s </big><a href=\"/\">Back To Home Page</a></p>""" %(cgi.escape(title),cgi.escape(question)))
 
         if ErrorMsg!="":
             self.response.out.write("""
-            %s""" %ErrorMsg)
+            %s""" %cgi.escape(ErrorMsg))
 
         newlist=getuniqlist(options,"option")
         option_num=1
         for entry in newlist:
             self.response.out.write("""
-            <div><input type="radio" name = "option", value="%s"/><font size = 4>Q%s. %s</font></div>"""%(entry, option_num, entry))
+            <div><input type="radio" name = "option", value="%s"/><font size = 4>Q%s. %s</font></div>"""%(cgi.escape(entry), option_num, cgi.escape(entry)))
             option_num=option_num+1
 
         self.response.out.write("""
@@ -311,7 +380,7 @@ def listObyATQ(account,title,question,self,ErrorMsg):
         <input type="submit" name="button" value= "edit option name" />
         <input type="hidden" name="account" value= "%s" />
         <input type="hidden" name="title" value= "%s" />
-        <input type="hidden" name="question" value="%s" /> """%(account,title,question))
+        <input type="hidden" name="question" value="%s" /> """%(cgi.escape(account),cgi.escape(title),cgi.escape(question)))
 
         self.response.out.write(""" </form>""")
         self.response.out.write(""" </body></html>""")
@@ -319,7 +388,7 @@ def listObyATQ(account,title,question,self,ErrorMsg):
         self.response.out.write("""
         <html><body>
         <p><big> There is no option in the survey (%s) for this question (%s).</big></p>
-        </body></html>""" % (title,question) )
+        </body></html>""" % (cgi.escape(title),cgi.escape(question)) )
     return
 
 # process the edit survey title page. 1. the title input is null, display error msg;
@@ -341,7 +410,7 @@ def defsurvey_title(account,title,flag,old_title,self):
                 <div><input type="submit" name="button" value="add an option"></div>
                 <input type="hidden" name="title" value="%s" />
                 <input type="hidden" name="account" value="%s" />
-                </form></body></html>""" % (title,title,account))
+                </form></body></html>""" % (cgi.escape(title),cgi.escape(title),cgi.escape(account)))
             if flag=="edit":
                 surveys = db.GqlQuery("SELECT * "
                                       "FROM Survey "
@@ -363,7 +432,7 @@ def defsurvey_title(account,title,flag,old_title,self):
             <div><textarea name="title" rows="3" cols="60"></textarea></div>
             <div><input type="submit" name="button" value="add a new question"></div>
             <input type="hidden" name="account" value="%s" />
-            </form></body></html>""" % (errorMsg, account))
+            </form></body></html>""" % (cgi.escape(errorMsg), cgi.escape(account)))
         if flag=="edit":
             self.response.out.write("""
             <html><body>
@@ -375,7 +444,7 @@ def defsurvey_title(account,title,flag,old_title,self):
             <input type="hidden" name="title" value="%s" />
             <input type="hidden" name="account" value="%s" />
             <input type="hidden" name="choice" value="update title" />
-            </form></body></html>""" %(old_title, errorMsg,old_title, account))
+            </form></body></html>""" %(cgi.escape(old_title), cgi.escape(errorMsg),cgi.escape(old_title), cgi.escape(account)))
     return
 
 # process the edit question name page. 1. the question name input is null, display error msg;
@@ -399,7 +468,7 @@ def defquestion(account,title,question,flag,old_question,self):
                 <input type="hidden" name="question" value="%s" />
                 <input type="hidden" name="title" value="%s" />
                 <input type="hidden" name="account" value="%s" />
-                </form></body></html>""" % (title,question, question, title, account))
+                </form></body></html>""" % (cgi.escape(title),cgi.escape(question), cgi.escape(question), cgi.escape(title), cgi.escape(account)))
             if flag=="edit":
                 surveys = db.GqlQuery("SELECT * "
                                       "FROM Survey "
@@ -422,7 +491,7 @@ def defquestion(account,title,question,flag,old_question,self):
             <div><input type="submit" name="button" value="add an option"></div>
             <input type="hidden" name="title" value="%s" />
             <input type="hidden" name="account" value="%s" />
-            </form></body></html>""" % (errorMsg,title, account))
+            </form></body></html>""" % (cgi.escape(errorMsg),cgi.escape(title), cgi.escape(account)))
         if flag=="edit":
             self.response.out.write("""
             <html><body>
@@ -435,7 +504,7 @@ def defquestion(account,title,question,flag,old_question,self):
             <input type="hidden" name="question" value="%s" />
             <input type="hidden" name="account" value="%s" />
             <input type="hidden" name="choice" value="update question" />
-            </form></body></html>""" %(old_question,errorMsg, title, old_question, account))
+            </form></body></html>""" %(cgi.escape(old_question),cgi.escape(errorMsg), cgi.escape(title), cgi.escape(old_question), cgi.escape(account)))
     return
 
 def defoption_question(account,title,question,option,self):
@@ -458,7 +527,7 @@ def defoption_question(account,title,question,option,self):
             self.response.out.write("""
             <html><body>
             <p><big> Add a question for survey: "%s"</big></p> 
-            <form action="/newSurvey" method="post">"""%title)
+            <form action="/newSurvey" method="post">"""%cgi.escape(title))
             sets = db.GqlQuery("SELECT * "
                                   "FROM Survey "
                                   "WHERE account = :1 and title = :2", account, title)
@@ -466,14 +535,14 @@ def defoption_question(account,title,question,option,self):
             num=1
             for entry in newlist:
                 self.response.out.write("""
-                <p>Q%s. %s</p>""" %(num,entry))
+                <p>Q%s. %s</p>""" %(num,cgi.escape(entry)))
                 num=num+1
             self.response.out.write("""
             <div><textarea name="question" rows="3" cols="60"></textarea></div>
             <div><input type="submit" name="button" value="add an option"></div>
             <input type="hidden" name="title" value="%s" />
             <input type="hidden" name="account" value="%s" />
-            </form></body></html>""" %(title,account))
+            </form></body></html>""" %(cgi.escape(title),cgi.escape(account)))
         else:
             errorMsg="The option you input exists! Please input another one:"
     else:
@@ -482,14 +551,14 @@ def defoption_question(account,title,question,option,self):
         self.response.out.write("""
         <html><body>
         <p><big> %s</big></p> 
-        <form action="/newSurvey" method="post">""" %errorMsg)
+        <form action="/newSurvey" method="post">""" %cgi.escape(errorMsg))
         sets = db.GqlQuery("SELECT * "
                             "FROM Survey "
                             "WHERE account = :1 and title = :2 and question = :3", account, title, question)
         num=1
         for entry in sets:
             self.response.out.write("""
-            <p>C%s. %s</p>""" %(num,entry.option))
+            <p>C%s. %s</p>""" %(num,cgi.escape(entry.option)))
             num=num+1
         self.response.out.write("""
         <div><textarea name="option" rows="3" cols="60"></textarea></div>
@@ -498,7 +567,7 @@ def defoption_question(account,title,question,option,self):
         <input type="hidden" name="question" value="%s" />
         <input type="hidden" name="title" value="%s" />
         <input type="hidden" name="account" value="%s" />
-        </form></body></html>""" % (question, title, account))
+        </form></body></html>""" % (cgi.escape(question), cgi.escape(title), cgi.escape(account)))
     return
 
 def defoption_option(account,title,question,option,flag,old_option,self):
@@ -523,14 +592,14 @@ def defoption_option(account,title,question,option,flag,old_option,self):
                 self.response.out.write("""
                 <html><body>
                 <p><big> Add a option for question "%s--%s":</big></p>
-                <form action="/newSurvey" method="post">""" %(title,question))
+                <form action="/newSurvey" method="post">""" %(cgi.escape(title),cgi.escape(question)))
                 sets = db.GqlQuery("SELECT * "
                                    "FROM Survey "
                                    "WHERE account = :1 and title = :2 and question = :3", account, title, question)
                 num=1
                 for entry in sets:
                     self.response.out.write("""
-                    <p>C%s. %s</p>""" %(num,entry.option))
+                    <p>C%s. %s</p>""" %(num,cgi.escape(entry.option)))
                     num=num+1
                 self.response.out.write("""
                 <div><textarea name="option" rows="3" cols="60"></textarea></div>
@@ -539,7 +608,7 @@ def defoption_option(account,title,question,option,flag,old_option,self):
                 <input type="hidden" name="question" value="%s" />
                 <input type="hidden" name="title" value="%s" />
                 <input type="hidden" name="account" value="%s" />     
-                </form></body></html>""" %(question, title, account))
+                </form></body></html>""" %(cgi.escape(question), cgi.escape(title), cgi.escape(account)))
             if flag=="edit":
                 surveys = db.GqlQuery("SELECT * "
                                       "FROM Survey "
@@ -558,14 +627,14 @@ def defoption_option(account,title,question,option,flag,old_option,self):
             self.response.out.write("""
             <html><body>
             <p><big> %s</big></p> 
-            <form action="/newSurvey" method="post">""" %errorMsg)
+            <form action="/newSurvey" method="post">""" %cgi.escape(errorMsg))
             sets = db.GqlQuery("SELECT * "
                                "FROM Survey "
                                "WHERE account = :1 and title = :2 and question = :3", account, title, question)
             num=1
             for entry in sets:
                 self.response.out.write("""
-                <p>C%s. %s</p>""" %(num,entry.option))
+                <p>C%s. %s</p>""" %(num,cgi.escape(entry.option)))
                 num=num+1
             self.response.out.write("""
             <div><textarea name="option" rows="3" cols="60"></textarea></div>
@@ -574,7 +643,7 @@ def defoption_option(account,title,question,option,flag,old_option,self):
             <input type="hidden" name="question" value="%s" />
             <input type="hidden" name="title" value="%s" />
             <input type="hidden" name="account" value="%s" />
-            </form></body></html>""" %(question, title, account))
+            </form></body></html>""" %(cgi.escape(question), cgi.escape(title), cgi.escape(account)))
         if flag=="edit":
             self.response.out.write("""
             <html><body>
@@ -588,7 +657,8 @@ def defoption_option(account,title,question,option,flag,old_option,self):
             <input type="hidden" name="option" value="%s" />
             <input type="hidden" name="account" value="%s" />
             <input type="hidden" name="choice" value="update option" />
-            </form></body></html>""" %(option,errorMsg, title, question, old_option, account))
+            </form></body></html>"""
+            %(cgi.escape(option),cgi.escape(errorMsg), cgi.escape(title), cgi.escape(question), cgi.escape(old_option), cgi.escape(account)))
     return
 
 def defoption_complete(account,title,question,option,self):
@@ -622,14 +692,14 @@ def defoption_complete(account,title,question,option,self):
         self.response.out.write("""
         <html><body>
         <p><big> %s</big></p> 
-        <form action="/newSurvey" method="post">""" %errorMsg)
+        <form action="/newSurvey" method="post">""" %cgi.escape(errorMsg))
         sets = db.GqlQuery("SELECT * "
                             "FROM Survey "
                             "WHERE account = :1 and title = :2 and question = :3", account, title, question)
         num=1
         for entry in sets:
             self.response.out.write("""
-            <p>C%s. %s</p>""" %(num,entry.option))
+            <p>C%s. %s</p>""" %(num,cgi.escape(entry.option)))
             num=num+1
         self.response.out.write("""
         <div><textarea name="option" rows="3" cols="60"></textarea></div>
@@ -638,7 +708,7 @@ def defoption_complete(account,title,question,option,self):
         <input type="hidden" name="question" value="%s" />
         <input type="hidden" name="title" value="%s" />
         <input type="hidden" name="account" value="%s" />
-        </form></body></html>""" %(question, title, account))
+        </form></body></html>""" %(cgi.escape(question), cgi.escape(title), cgi.escape(account)))
     return
 
 class MainPage(webapp.RequestHandler):
@@ -653,13 +723,13 @@ class MainPage(webapp.RequestHandler):
              self.response.out.write("""
               <form action="/sign" method="post">
                <input type="hidden" name="account" value=%s />
-               <input type="radio" name="taskChoice" value="create a new survey" /> create a new survey<br />
+               <div><p><input type="radio" name="taskChoice" value="create a new survey" /> create a new survey<br />
                <input type="radio" name="taskChoice" value="edit your survey" /> edit your survey<br />
                <input type="radio" name="taskChoice" value="vote" /> vote<br />
-               <input type="radio" name="taskChoice" value="view survey results" /> view survey results<br />
-                <input type="radio" name="taskChoice" value="change your votes" /> change your votes<br />
+               <input type="radio" name="taskChoice" value="view survey results" /> view survey results<br /></p></div>
+               <div><p><input type="radio" name="taskChoice" value="change your votes" /> change your votes<br /></p></div>
                <input type="submit" name = "button" value="submit" />
-              </form>"""%account)
+              </form>"""%cgi.escape(account))
              
         else:
            greeting = ("<a href=\"%s\">Sign in or register</a>." %
@@ -682,9 +752,9 @@ class TaskChoice(webapp.RequestHandler):
                <input type="radio" name="taskChoice" value="view survey results" /> view survey results<br />
                <input type="radio" name="taskChoice" value="change your votes" /> change your votes<br />
                <input type="submit" name = "button" value="submit" />
-              </form>"""%account)
+              </form>"""%cgi.escape(account))
         else: 
-          self.response.out.write('<html><body>%s, you choose to '%account)
+          self.response.out.write('<html><body>%s, you choose to '%cgi.escape(account))
           self.response.out.write(cgi.escape(taskChoice))
           self.response.out.write('. <a href=\"/\">Back To Home Page</a><br /></body></html>')
 
@@ -699,7 +769,7 @@ class TaskChoice(webapp.RequestHandler):
                  <input type="hidden" name="account" value=%s />
               </form>
             </body>
-          </html>"""%account)
+          </html>"""%cgi.escape(account))
 
         if taskChoice=="edit your survey":
             listsurveyTitlebyAccount(account,self,"")
@@ -707,11 +777,9 @@ class TaskChoice(webapp.RequestHandler):
             listsurveyTitle(account,self,"vote","")
         if taskChoice=="view survey results":
             listsurveyTitle(account,self,"result","")
+        if taskChoice=="change your votes":
+            listsurveyTitle(account,self,"change","")
             
-        ## if taskChoice=="change your votes":
-            
-            
-       # else if taskChoice=="view survey results":
         #else:
             
 class UpdateText(webapp.RequestHandler):
@@ -761,7 +829,7 @@ class EditTitle(webapp.RequestHandler):
                               <input type="hidden" name="choice" value="update title" />
                       </form>
                     </body>
-                 </html>""" %(title, title, account))
+                 </html>""" %(cgi.escape(title), cgi.escape(title), cgi.escape(account)))
             if opSelected == "add question":
                 defquestion(account,title,question,"create","",self)
                 
@@ -799,7 +867,7 @@ class EditQuestion(webapp.RequestHandler):
                               <input type="hidden" name="choice" value="update question" />
                       </form>
                     </body>
-                 </html>""" %(question, title, question, account))
+                 </html>""" %(cgi.escape(question), cgi.escape(title), cgi.escape(question), cgi.escape(account)))
             if opSelected == "add option":
                 defoption_question(account, title, question, option, self)
                 
@@ -840,7 +908,7 @@ class EditOption(webapp.RequestHandler):
                               <input type="hidden" name="choice" value="update option" />
                       </form>
                     </body>
-                 </html>""" %(option, title, question, option, account))
+                 </html>""" %(cgi.escape(option), cgi.escape(title), cgi.escape(question), cgi.escape(option), cgi.escape(account)))
 
 class GetAuthor(webapp.RequestHandler):
     def post(self):
@@ -864,6 +932,8 @@ class DisplayResult(webapp.RequestHandler):
         else:
             if flag=="vote":
                 listOptions(self,voter,title,account,flag,queIndex)
+            if flag=="change":
+                listOptions(self,voter,title,account,flag,queIndex)
             if flag=="result":
                 surveys = db.GqlQuery("SELECT * "
                                       "FROM Survey "
@@ -877,14 +947,14 @@ class DisplayResult(webapp.RequestHandler):
                     question_num=1
                     for element in questions:
                         self.response.out.write("""
-                        <p><big>Q%s. %s</big><br \>""" %(question_num,element))
+                        <p><big>Q%s. %s</big><br \>""" %(question_num,cgi.escape(element)))
                         options = db.GqlQuery("SELECT * "
                                               "FROM Survey "
                                               "WHERE title = :1 and account = :2 and question = :3", title, account,element)
                         option_num=1
                         for item in options:
                             self.response.out.write("""
-                              C%s. %s   --   %s<br \>""" %(option_num,item.option,item.count))
+                              C%s. %s   --   %s<br \>""" %(option_num,cgi.escape(item.option),item.count))
                             option_num=option_num+1
                         self.response.out.write("</p>")
                     self.response.out.write("""<br />
@@ -894,8 +964,64 @@ class DisplayResult(webapp.RequestHandler):
                     self.response.out.write("""
                     <html><body>
                     <p><big> There is no question in the survey %s (%s).</big></p>
-                    </body></html>""" %(title,account) )
+                    </body></html>""" %(cgi.escape(title),cgi.escape(account) ))
 
+def changeOperation(voter,title,account,question,old_option,selectedOption):
+    options = db.GqlQuery("SELECT * "
+                          "FROM MyVote "
+                         "WHERE account = :1 and title = :2 and author = :3 and question = :4 and option=:5",voter, title,account,question,old_option)
+    db.delete(options)
+    answer=MyVote(account=voter,
+                  author=account,
+                  title=title,
+                  question=question,
+                  option=selectedOption)
+    db.put(answer)
+
+    options = db.GqlQuery("SELECT * "
+                          "FROM Survey "
+                          "WHERE account = :1 and title = :2 and question = :3 and option=:4",account, title,question,old_option)
+    for option in options:
+        option.count=option.count-1
+        option.put()
+    options = db.GqlQuery("SELECT * "
+                          "FROM Survey "
+                          "WHERE account = :1 and title = :2 and question = :3 and option=:4",account, title,question,selectedOption)
+    for option in options:
+        option.count=option.count+1
+        option.put()
+    return
+
+class AddComment(webapp.RequestHandler):
+    def post(self):
+        title=self.request.get('title')
+        content=self.request.get('comment')
+        account=self.request.get('account')
+        voter=self.request.get('voter')
+        operation=self.request.get('button')
+        if content!="":
+            comm=Comment(account=voter,
+                         title=title,
+                         author=account,
+                         content=content)
+            db.put(comm)
+        if operation =="submit":
+            self.response.out.write("""<html><body><form action="/addComment" method="post">""")
+            self.response.out.write("""Would you like to read all the comments? Or <a href=\"/\">Back To Home Page</a></br>""")
+            self.response.out.write("""<div><input type="submit" name="button" value="yes"></div>""")
+            self.response.out.write("""
+                      <input type="hidden" name="voter" value="%s">
+                      <input type="hidden" name="title" value="%s">
+                      <input type="hidden" name="account" value="%s">
+                      </form></body></html>""" %(cgi.escape(voter),cgi.escape(title),cgi.escape(account)))
+        if operation =="yes":
+             comments=db.GqlQuery("SELECT * "
+                                  "FROM  Comment "
+                                  "WHERE account = :1 and title = :2 and author = :3",
+                                  voter, title, account)
+             for comment in comments:
+                 self.response.out.write("""%s(%s):%s</br>"""%(cgi.escape(comment.account), comment.date, cgi.escape(comment.content)))
+             self.response.out.write("""<a href=\"/\">Back To Home Page</a></br>""")
                 
 class VoteOptions(webapp.RequestHandler):
     def post(self):
@@ -905,40 +1031,85 @@ class VoteOptions(webapp.RequestHandler):
         flag=self.request.get('flag')
         voter=self.request.get('voter')
         queIndex = self.request.get('index')
+        old_option = self.request.get('old option')
         voteOp = self.request.get('button')
         selectedOption = self.request.get('option')
+
         if voteOp =="skip to the end":
             self.response.out.write("""
             Thank you for voting!  <a href=\"/\">Back To Home Page</a></br>""")
-            printVoteResult(voter, title, account,self)   
+            printVoteResult(voter, title, account,self)
+
+        if voteOp == "next":
+                index=int(queIndex)+1
+                listOptions(self,voter,title,account,flag,index)
+
+        if voteOp == "change":
+            if selectedOption == "":
+                listOptions(self,voter,title,account,flag,queIndex)  
+            else:
+                changeOperation(voter,title,account,question,old_option,selectedOption)
+                self.response.out.write("""
+                Your answer changed!  <a href=\"/\">Back To Home Page</a></br>""")
+                printVoteResult(voter, title, account,self)   
+
+        if voteOp == "change and next":
+            if selectedOption == "":
+                listOptions(self,voter,title,account,flag,queIndex)  
+            else:
+                changeOperation(voter,title,account,question,old_option,selectedOption)
+                index=int(queIndex)+1
+                listOptions(self,voter,title,account,flag,index)
+                
         if voteOp == "next question":
             if selectedOption == "":
                 listOptions(self,voter,title,account,flag,queIndex)  
             else:
-                 vs = MyVote(account=voter,
+                 questions = db.GqlQuery("SELECT * "
+                                      "FROM MyVote "
+                                      "WHERE account = :1 and title = :2 and question =:3 and author = :4",
+                                       voter, title, question, account)
+                 if questions.count()!=0:
+                      self.response.out.write("""
+                       <html><body>You have voted for question: %s</br>
+                       <form action="/voteOptions" method="post">"""%cgi.escape(question))
+                      index=int(queIndex)+1
+                      self.response.out.write("""<div><input type="submit" name="button" value="next question">
+                                           <input type="submit" name="button" value="skip to the end"></div>""")
+                      self.response.out.write("""
+                      <input type="hidden" name="voter" value="%s">
+                      <input type="hidden" name="title" value="%s">
+                      <input type="hidden" name="account" value="%s">
+                      <input type="hidden" name="question" value="%s">
+                      <input type="hidden" name="index" value="%s">
+                      <input type="hidden" name="flag" value="%s">
+                      </form></body></html>""" %(cgi.escape(voter),cgi.escape(title),cgi.escape(account),cgi.escape(question),index,flag))
+                 else:
+                      vs = MyVote(account=voter,
                             author=account,
                             title=title,
                             question=question,
                             option=selectedOption,
                             )
-                 db.put(vs)
-                 titles = db.GqlQuery("SELECT * "
+                      db.put(vs)
+                      titles = db.GqlQuery("SELECT * "
                                       "FROM VoteCount "
                                       "WHERE account = :1 and title = :2",
                                        account, title)
-                 for tt in titles:
-                     tt.count=tt.count+1
-                     tt.put()
+                      for tt in titles:
+                          tt.count=tt.count+1
+                          tt.put()
                  
-                 surveys = db.GqlQuery("SELECT * "
+                      surveys = db.GqlQuery("SELECT * "
                                       "FROM Survey "
                                       "WHERE account = :1 and title = :2 and question =:3 and option =:4",
                                        account, title, question, selectedOption)
-                 for survey in surveys:
-                    survey.count=survey.count+1
-                    survey.put()
-                 index=int(queIndex)+1
-                 listOptions(self,voter,title,account,flag,index)
+                      for survey in surveys:
+                          survey.count=survey.count+1
+                          survey.put()
+                      index=int(queIndex)+1
+                      listOptions(self,voter,title,account,flag,index)
+                    
                                            
 class CreateSurvey(webapp.RequestHandler):
     def post(self):
@@ -968,7 +1139,8 @@ application = webapp.WSGIApplication(
                                        ('/updateText', UpdateText),
                                        ('/getauthor',GetAuthor),
                                        ('/displayresult',DisplayResult),
-                                       ('/voteOptions',VoteOptions)],
+                                       ('/voteOptions',VoteOptions),
+                                       ('/addComment',AddComment)],
                                      debug=True)
 
 def main():
