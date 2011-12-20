@@ -58,8 +58,8 @@ def getuniqlist(mylist,attribute):
 def printVoteResult(voter, title, account, self):
         titles = db.GqlQuery("SELECT * "
                              "FROM VoteCount "
-                             "WHERE account = :1 and title = :2 and voter =:3",
-                             account, title, voter)
+                             "WHERE account = :1 and title = :2 ",
+                             account, title)
         if titles.count()==0:
             vc=VoteCount(account=account, title=title, voter=voter, count=1)
             db.put(vc)
@@ -188,9 +188,9 @@ def listAuthorbySurvey(self,voter,title,flag,ErrorMsg):
                           "FROM MyVote "
                           "WHERE account = :1 and title = :2", voter,title)
             if votedSurveys.count()!=0:
-                isVoted=0
                 notVotedSurvey=[]
                 for survey in surveys:
+                    isVoted=0
                     for voted in votedSurveys:
                         if voted.author == survey.account and voted.title == survey.title:
                             isVoted=1
@@ -967,6 +967,11 @@ class EditTitle(webapp.RequestHandler):
                             "WHERE author = :1 and title = :2",
                             account, title)
         db.delete(votes)
+        comments = db.GqlQuery("SELECT * "
+                            "FROM Comment "
+                            "WHERE author = :1 and title = :2",
+                            account, title)
+        db.delete(comments)
         vcs = db.GqlQuery("SELECT * "
                           "FROM VoteCount "
                           "WHERE account = :1 and title = :2", account, title)  
